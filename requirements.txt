@@ -1,0 +1,6 @@
+fastapi
+requests
+selenium
+uvicorn
+webdriver-manager
+retry
