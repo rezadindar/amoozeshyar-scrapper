@@ -336,6 +336,12 @@ async def read_item(name):
 @app.get("/clean-files")
 def cleanFiles():
     cleanDir("files")
+    
+    db = sqlite3.connect('amoozeshyar.db')
+    cursor = db.cursor()
+    cursor.execute("UPDATE process_status SET fetchStatus = 'False' WHERE id = 1")
+    db.commit()
+    db.close()
 
     result = {
         'status': 'ok'
