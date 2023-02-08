@@ -112,7 +112,7 @@ def runFetch():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.page_load_strategy = 'eager'
     chrome_options.add_experimental_option("prefs", prefs)
-    browser = webdriver.Chrome(ChromeDriverManager().install(), chrome_options=chrome_options)
+    browser = webdriver.Chrome(ChromeDriverManager(version=config[7]).install(), chrome_options=chrome_options)
     actions = ActionChains(browser)
 
     browser.get(config[1])
