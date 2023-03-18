@@ -104,7 +104,7 @@ def runFetch():
         #"plugins.always_open_pdf_externally": False,
         #"plugins.plugins_disabled" : ["Chrome PDF Viewer"]
     }
-    chrome_options.add_argument('--headless=chrome')
+    chrome_options.add_argument('--headless=new')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--start-maximized")
