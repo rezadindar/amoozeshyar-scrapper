@@ -26,5 +26,5 @@ source scl_source enable rh-python38
 # نحوه اجرا
 برای اجرای اسکریپت از دستور زیر استفاده نمایید:
 ```
-screem uvicorn amoozeshyar:app --reload --host=0.0.0.0
+screen uvicorn amoozeshyar:app --reload --host=0.0.0.0
 ```
