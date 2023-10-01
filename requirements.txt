@@ -3,4 +3,4 @@ requests
 selenium
 uvicorn
 webdriver-manager
-retry
+retry2
