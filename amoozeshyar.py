@@ -32,7 +32,7 @@ if not os.path.exists("files"):
     os.makedirs("files")
 
 
-def solve(f):
+def solveCaptcha(f):
     with open(f, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode('ascii')
         url = 'https://api.apitruecaptcha.org/one/gettext'
@@ -66,17 +66,33 @@ def checkIsCsv(filename):
         return False
 
 
+def registerFetchError(status = True):
+    db = sqlite3.connect('amoozeshyar.db')
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE process_status SET fetchStatus = 'False', fetchError = '%s' WHERE id = 1" % status)
+    db.commit()
+    db.close()
+
+
+def runFetchResult(conn1):
+    try:
+        msg = conn1.recv()
+        if msg == 'error':
+            print('Ended With Error!')
+            registerFetchError()
+    except Exception as e:
+        print(e)
+        registerFetchError()
+        print('Ended With Unknown Error!')
+
+
 app = FastAPI()
 
 
 @app.on_event("startup")
 async def startup_event():
-    db = sqlite3.connect('amoozeshyar.db')
-    cursor = db.cursor()
-    cursor.execute(
-        "UPDATE process_status SET fetchStatus = 'False', fetchError = 'False' WHERE id = 1")
-    db.commit()
-    db.close()
+    registerFetchError(False)
 
     cleanDir("files")
 
@@ -112,26 +128,6 @@ def fetch():
         }
 
     return result
-
-
-def registerFetchError():
-    db = sqlite3.connect('amoozeshyar.db')
-    cursor = db.cursor()
-    cursor.execute(
-        "UPDATE process_status SET fetchStatus = 'False', fetchError = 'True' WHERE id = 1")
-    db.commit()
-    db.close()
-
-
-def runFetchResult(conn1):
-    try:
-        msg = conn1.recv()
-        if msg == 'Error':
-            print('Ended With Error!')
-            registerFetchError()
-    except:
-        registerFetchError()
-        print('Ended With Error!')
 
 
 @retry(Exception, tries=3, delay=3)
@@ -179,13 +175,13 @@ def runFetch(connection):
     with open('captcha.png', 'wb') as file:
         file.write(captchaImage.screenshot_as_png)
 
-    sovleCaptcha = solve('captcha.png')
+    sovleCaptcha = solveCaptcha('captcha.png')
     try:
         captchaText = sovleCaptcha['result']
     except:
         if sovleCaptcha['error_type'] == 'QueryException':
             print('Captcha Credit Is Over!')
-            connection.send('Error')
+            connection.send('error')
             return False
 
     captchaFiled = browser.find_element(By.NAME, 'jcaptcha')
@@ -360,12 +356,7 @@ def runFetch(connection):
         browser.switch_to.frame(
             browser.find_elements(By.TAG_NAME, "iframe")[0])
 
-    db = sqlite3.connect('amoozeshyar.db')
-    cursor = db.cursor()
-    cursor.execute(
-        "UPDATE process_status SET fetchStatus = 'False' WHERE id = 1")
-    db.commit()
-    db.close()
+    registerFetchError(False)
     browser.quit()
 
     return True
@@ -421,12 +412,7 @@ async def read_item(name):
 def cleanFiles():
     cleanDir("files")
 
-    db = sqlite3.connect('amoozeshyar.db')
-    cursor = db.cursor()
-    cursor.execute(
-        "UPDATE process_status SET fetchStatus = 'False', fetchError = 'False' WHERE id = 1")
-    db.commit()
-    db.close()
+    registerFetchError(False)
 
     result = {
         'status': 'ok'
