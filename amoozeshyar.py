@@ -66,7 +66,7 @@ def checkIsCsv(filename):
         return False
 
 
-def registerFetchError(status = True):
+def registerFetchError(status=True):
     db = sqlite3.connect('amoozeshyar.db')
     cursor = db.cursor()
     cursor.execute(
@@ -356,9 +356,10 @@ def runFetch(connection):
         browser.switch_to.frame(
             browser.find_elements(By.TAG_NAME, "iframe")[0])
 
-    registerFetchError(False)
     browser.quit()
+    registerFetchError(False)
 
+    connection.send('success')
     return True
 
 
