@@ -3,22 +3,28 @@ from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.chrome.options import Options
 import requests
 import base64
 import time
 import os
+import signal
 import ntpath
 import glob
 import shutil
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from multiprocessing import Pipe
 from multiprocessing import Process
 import sqlite3
 from fastapi.responses import FileResponse
 from retry import retry
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service as Service
+#from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
+import sys
+from typing import Union
+from typing_extensions import Annotated
 
 db = sqlite3.connect('amoozeshyar.db')
 cursor = db.cursor()
@@ -27,10 +33,14 @@ db.commit()
 db.close()
 
 PATH = os.path.join(os.getcwd(), 'files')
+DEBUG = False
 
 if not os.path.exists("files"):
     os.makedirs("files")
 
+def signal_handler(self, sig, frame):
+    print("Exiting the program...")
+    sys.exit(0)
 
 def solveCaptcha(f):
     with open(f, "rb") as image_file:
@@ -98,7 +108,7 @@ async def startup_event():
 
 
 @app.get("/fetch")
-def fetch():
+def fetch(term: Annotated[Union[str, None], Query(min_length=4, max_length=4, pattern="\d{4}")] = None):
     db = sqlite3.connect('amoozeshyar.db')
     processStatus = db.execute("SELECT * from process_status").fetchone()
 
@@ -114,10 +124,10 @@ def fetch():
         # create the pipe
         conn1, conn2 = Pipe()
         # create a child process process
-        process = Process(target=runFetch, args=(conn2,))
-        process.start()
-        process = Process(target=runFetchResult, args=(conn1,))
-        process.start()
+        fetchProcess = Process(target=runFetch, args=(conn2, term))
+        fetchProcess.start()
+        resultProcess = Process(target=runFetchResult, args=(conn1,))
+        resultProcess.start()
 
         result = {
             'status': 'fetchStarted'
@@ -129,30 +139,38 @@ def fetch():
 
     return result
 
-
-@retry(Exception, tries=3, delay=3)
-def runFetch(connection):
+@retry(Exception, tries=3, delay=5)
+def runFetch(connection, term):
+    print('Enter runFetch')
     chrome_options = Options()
     prefs = {
         "download.default_directory": PATH,
-        # "download.open_pdf_in_system_reader": False,
-        # "download.prompt_for_download": True,
-        # "download_restrictions": 3,
-        # "plugins.always_open_pdf_externally": False,
-        # "plugins.plugins_disabled" : ["Chrome PDF Viewer"]
+        "plugins.plugins_disabled" : ["Chrome PDF Viewer"]
     }
     chrome_options.add_argument('--headless=new')
     chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument(
-        "--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    #chrome_options.add_argument("--start-maximized")
+    #chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.page_load_strategy = 'eager'
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.page_load_strategy = 'normal'
     chrome_options.add_experimental_option("prefs", prefs)
-    browser = webdriver.Chrome(ChromeDriverManager(
-        version=config[7]).install(), chrome_options=chrome_options)
+    #chrome_options.set_capability("cloud:options", {"name": "test_1"})
+
+    try:
+        browser = webdriver.Chrome(options=chrome_options)
+    except Exception as e:
+        print(e)
+        print('Problem With Browser Start!')
+        connection.send('error')
+        return False
+    
+    print('After browser start')
+
     actions = ActionChains(browser)
+
+    print(browser.title)
 
     browser.get(config[1])
     assert 'ورود به سيستم' in browser.title
@@ -175,9 +193,18 @@ def runFetch(connection):
     with open('captcha.png', 'wb') as file:
         file.write(captchaImage.screenshot_as_png)
 
-    sovleCaptcha = solveCaptcha('captcha.png')
     try:
-        captchaText = sovleCaptcha['result']
+        sovleCaptcha = solveCaptcha('captcha.png')
+    except:
+        print('Captcha Not Solved!')
+        connection.send('error')
+        return False
+
+    try:
+        if DEBUG == False:
+            captchaText = sovleCaptcha['result']
+        else:
+            captchaText = 1234
     except:
         if sovleCaptcha['error_type'] == 'QueryException':
             print('Captcha Credit Is Over!')
@@ -191,11 +218,51 @@ def runFetch(connection):
     actions.click(loginButton).perform()
 
     try:
+        print("Testing Login Status!")
+        myElem = WebDriverWait(browser, 30, 3).until(EC.any_of(EC.presence_of_element_located((By.CLASS_NAME, "logintime")), EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'خطا')]"))))
+    except TimeoutException:
+        print("Loading took too much time!")
+
+    if myElem.get_attribute("class") == 'logintime':
+        print("After Login Page is ready!")
+    elif myElem.get_attribute("class") == 'dijitDialogTitle':
+        print('Login Failed!')
+        registerFetchError()
+        connection.send('error')
+        return False
+
+    '''try:
         elemReady = WebDriverWait(browser, 30).until(
             EC.presence_of_element_located((By.CLASS_NAME, "logintime")))
         print("After Login Page is ready!")
     except TimeoutException:
-        print("Loading took too much time!")
+        print("Loading took too much time!")'''
+
+    if term is not None:
+        entekhabMenu = browser.find_element(
+            By.XPATH, "//*[contains(text(), 'انتخاب')]")
+
+        actions.click(entekhabMenu).perform()
+
+        try:
+            elemReady = WebDriverWait(browser, 30).until(
+                EC.presence_of_element_located((By.ID, "saveWorkspace")))
+            print("Entekhab Menu is ready!")
+        except TimeoutException:
+            print("Loading took too much time!")
+
+        termSelect = Select(browser.find_element(By.NAME, "parameter(wsTermRef)"))
+        termSelect.select_by_visible_text(term)
+
+        saveWorkspace = browser.find_element(By.ID, 'saveWorkspace')
+        actions.click(saveWorkspace).perform()
+
+        try:
+            elemReady = WebDriverWait(browser, 30).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "logintime")))
+            print("After saveWorkspace Page is ready!")
+        except TimeoutException:
+            print("Loading took too much time!")
 
     browser.switch_to.frame(browser.find_elements(By.TAG_NAME, "iframe")[0])
 
@@ -302,18 +369,29 @@ def runFetch(connection):
             print("Loading took too much time!")
 
         browser.execute_script("window.scrollTo(0,document.body.scrollHeight)")
-        groupSearchSubmitButton = browser.find_element(
+
+        reportTypeSelect = Select(browser.find_element(By.ID, "rptName"))
+        reportTypeSelect.select_by_value('orgcrsbyclnandplc')  
+
+        reportGenerationSubmitButton = browser.find_element(
             By.XPATH, "//span[contains(@class, 'gradiantButton')]")
-        actions.click(groupSearchSubmitButton).perform()
+        actions.click(reportGenerationSubmitButton).perform()
 
         print("Start Of Report Generation!")
 
         try:
-            myElem = WebDriverWait(browser, 600).until(
-                EC.presence_of_element_located((By.ID, 'excelBtn')))
-            print("Excel is ready!")
+            print("Testing Excel Report Creation!")
+            myElem = WebDriverWait(browser, 600, 3).until(EC.any_of(EC.presence_of_element_located((By.ID, 'excelBtn')), EC.presence_of_element_located((By.ID, "lblTitle"))))
         except TimeoutException:
             print("Loading took too much time!")
+
+        if myElem.get_attribute("id") == 'excelBtn':
+            print("Excel is ready!")
+        elif myElem.get_attribute("id") == 'lblTitle':
+            print('Report is unavailable')
+            registerFetchError()
+            connection.send('error')
+            return False
 
         time.sleep(3)
 
@@ -356,6 +434,7 @@ def runFetch(connection):
         browser.switch_to.frame(
             browser.find_elements(By.TAG_NAME, "iframe")[0])
 
+    browser.close()
     browser.quit()
     registerFetchError(False)
 
