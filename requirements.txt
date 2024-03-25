@@ -2,5 +2,5 @@ fastapi
 requests
 selenium
 uvicorn
-webdriver-manager
+# webdriver-manager
 retry2
